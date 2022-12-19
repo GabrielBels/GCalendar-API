@@ -12,7 +12,6 @@ app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 //#endregion
 
-
 // Google calendar API settings
 const SCOPES = 'https://www.googleapis.com/auth/calendar';
 const calendar = google.calendar({ version: "v3" });
@@ -51,9 +50,30 @@ const dateTimeForCalendar = (sDate) => {
     return { 'start': startDate, 'end': endDate }
 };
 
+function createEventObj(title, description, startDate) {
+    let dateTime = dateTimeForCalendar(startDate);
+
+    // Event for Google Calendar
+    return {
+        'summary': title,
+        'description': description,
+        'start': {
+            'dateTime': dateTime['start'],
+            'timeZone': 'America/Sao_Paulo'
+        },
+        'end': {
+            'dateTime': dateTime['end'],
+            'timeZone': 'America/Sao_Paulo'
+        }
+    };
+}
+
+
+//#region APIs
+
 // Insert new event on the calendar
-// { "title": "Natal", "description": "Vespera de Natal..", "instanceName": "gabel", 
-//  "date":{ "year": 2022, "month": 12, "day": 24, "hour": 23, "minute": 59 } }
+// {"title": "Novo evento teste da Vitoooooooooora","description": null,"instanceName": "vitoriabarbara",
+// "date": {"year": 2022,"month": 12,"day": 27,"hour": 14,"minute": 0}}
 app.post('/CreateEvent', async (req, res) => {
     try {
         const request = req.body;
@@ -91,91 +111,69 @@ app.post('/CreateEvent', async (req, res) => {
     }
 });
 
-
-function createEventObj(title, description, startDate) {
-    let dateTime = dateTimeForCalendar(startDate);
-
-    // Event for Google Calendar
-    return {
-        'summary': title,
-        'description': description,
-        'start': {
-            'dateTime': dateTime['start'],
-            'timeZone': 'America/Sao_Paulo'
-        },
-        'end': {
-            'dateTime': dateTime['end'],
-            'timeZone': 'America/Sao_Paulo'
-        }
-    };
-}
-
-// Get all the events between two dates
-const getEvents = async (dateTimeStart, dateTimeEnd) => {
+// Get list of events
+//{"instanceName": "vitoriabarbara",
+// "startDate": {"year": 2022,"month": 12,"day": 27},
+// "endDate": {"year": 2022,"month": 12,"day": 27}}
+app.post("/Events", async (req, res) => {
 
     try {
+        const request = req.body;
+
+        const instanceCredentials = JSON.parse(process.env[request.instanceName]);
+
+        const auth = new google.auth.JWT(instanceCredentials.client_email, null, instanceCredentials.private_key, SCOPES);
+
+        // let start = '2020-10-03T00:00:00.000Z';
+        // let end = '2020-10-04T00:00:00.000Z';
+
+        const dtStart = `${request.startDate.year}-${request.startDate.month}-${request.startDate.day}T${request.startDate.hour ?? "06"}:${request.startDate.minute ?? "00"}:00.000Z`;
+        const dtEnd = `${request.endDate.year}-${request.endDate.month}-${request.endDate.day}T${request.endDate.hour ?? "23"}:${request.endDate.minute ?? "59"}:00.000Z`;
+
         let response = await calendar.events.list({
-            auth: gabelConfig.authObj,
-            calendarId: gabelConfig.calendarId,
-            timeMin: dateTimeStart,
-            timeMax: dateTimeEnd,
+            auth,
+            calendarId: instanceCredentials.calendar_id,
+            timeMin: dtStart,
+            timeMax: dtEnd,
             timeZone: 'America/Sao_Paulo'
         });
 
-        let items = response['data']['items'];
-        return items;
+        let items = (response['data']['items'] ?? []).filter(x => x.status == "confirmed");
+
+        if (items && items.length > 0)
+            return res.status(200).json({ success: true, items });
+        else
+            return res.status(404).json({ success: true, items: null });
     } catch (error) {
-        console.log(`Error at getEvents --> ${error}`);
-        return 0;
+        return res.status(500).json({ success: false, message: error });
     }
-};
+})
 
-// let start = '2020-10-03T00:00:00.000Z';
-// let end = '2020-10-04T00:00:00.000Z';
-
-// getEvents(start, end)
-//     .then((res) => {
-//         console.log(res);
-//     })
-//     .catch((err) => {
-//         console.log(err);
-//     });
-
-// Delete an event from eventID
-
-const deleteEvent = async (eventId) => {
+// Delete event
+// {"instanceName": "vitoriabarbara","eventId": "1cetgj17ef07cv12p7j1ab7m9s"}
+app.delete("/Event", async (req, res) => {
 
     try {
+        const request = req.body;
+
+        const instanceCredentials = JSON.parse(process.env[request.instanceName]);
+
+        const auth = new google.auth.JWT(instanceCredentials.client_email, null, instanceCredentials.private_key, SCOPES);
+
         let response = await calendar.events.delete({
-            auth: gabelConfig.authObj,
-            calendarId: gabelConfig.calendarId,
-            eventId: eventId
+            auth,
+            calendarId: instanceCredentials.calendar_id,
+            eventId: request.eventId
         });
-
-        if (response.data === '') {
-            return 1;
-        } else {
-            return 0;
-        }
+        return res.status(200).json({ success: true, message: response });
     } catch (error) {
-        console.log(`Error at deleteEvent --> ${error}`);
-        return 0;
+        return res.status(500).json({ success: false, message: error });
     }
-};
-
-// let eventId = 'hkkdmeseuhhpagc862rfg6nvq4';
-
-// deleteEvent(eventId)
-//     .then((res) => {
-//         console.log(res);
-//     })
-//     .catch((err) => {
-//         console.log(err);
-//     });
+});
 
 app.listen(7171, () => {
     console.log('\nApp escutando na porta: localhost' + ':' + 7171)
-})
+});
 
-
+//#endregion
 
